@@ -200,7 +200,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 16
+    BATCH_SIZE = 1
 
     try:
         rmtree('results/')
