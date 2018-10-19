@@ -110,7 +110,7 @@ def train_model(
             i = 0
             total_done = 0
             # iterate over all data in train/val dataloader:
-            for data in dataloaders[phase]:
+            for data in dataloaders[phase]:                
                 i += 1
                 inputs, labels, _ = data
                 batch_size = inputs.shape[0]
@@ -126,6 +126,8 @@ def train_model(
                     optimizer.step()
 
                 running_loss += loss.data[0] * batch_size
+                if (i % 5) == 0:
+                    print ("Batch {}/{:.0f} Loss {:.4f}".format(i, dataset_sizes[phase] / batch_size, loss.data[0]))
 
             epoch_loss = running_loss / dataset_sizes[phase]
 
@@ -200,7 +202,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 1
+    BATCH_SIZE = 256
 
     try:
         rmtree('results/')
@@ -253,12 +255,12 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         transformed_datasets['train'],
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=8)
+        num_workers=0)
     dataloaders['val'] = torch.utils.data.DataLoader(
         transformed_datasets['val'],
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=8)
+        num_workers=0)
 
     # please do not attempt to train without GPU as will take excessively long
     if not use_gpu:
