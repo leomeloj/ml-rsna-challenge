@@ -73,7 +73,7 @@ def calc_cam(x, label, model):
         def forward(self, x):
             x = self.features(x)
             x = torch.nn.functional.relu(x, inplace=True)
-            return xdensenet_last_laye
+            return x
 
     # instantiate cam model and get output
     model_cam = densenet_last_layer(model)
