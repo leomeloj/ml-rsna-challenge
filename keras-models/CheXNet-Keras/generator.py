@@ -94,12 +94,18 @@ def load_image(image_file):
         image_path = image_file
         image = Image.open(image_path)
         image_array = np.asarray(image.convert("RGB"))
-        image_array = image_array / 255.
+        #image_array = image_array / 255.
+        #image_array = (image_array / 127.5 -1.)
+        image_array = image_array 
         image_array = resize(image_array, (224, 224))
         return image_array
 
 def transform_batch_images(batch_x):
-    imagenet_mean = np.array([0.485, 0.456, 0.406])
-    imagenet_std = np.array([0.229, 0.224, 0.225])
-    batch_x = (batch_x - imagenet_mean) / imagenet_std
+    #imagenet_mean = np.array([0.485, 0.456, 0.406])
+    #imagenet_std = np.array([0.229, 0.224, 0.225])
+
+    dicom_mean = np.array([0.33247544815674657,  0.31758477661250806,  0.31000697518914394])
+    dicom_std = np.array([0.2833439093003167,0.2696912325438337,0.26292516374483627])
+
+    batch_x = (batch_x - dicom_mean) #/ dicom_std
     return batch_x
