@@ -30,17 +30,17 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
     model.train(False)
 
     # create dataloader
-    dataset = CXR.CXRDataset(
+    dataset = CXR.RSNA_Dataset(
         path_to_images=PATH_TO_IMAGES,
-        fold="test",
+        mode="val",
         transform=data_transforms['val'])
     dataloader = torch.utils.data.DataLoader(
         dataset, BATCH_SIZE, shuffle=False, num_workers=8)
     size = len(dataset)
 
     # create empty dfs
-    pred_df = pd.DataFrame(columns=["Image Index"])
-    true_df = pd.DataFrame(columns=["Image Index"])
+    pred_df = pd.DataFrame(columns=["patientId"])
+    true_df = pd.DataFrame(columns=["patientId"])
 
     # iterate over dataloader
     for i, data in enumerate(dataloader):
@@ -58,8 +58,8 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
         for j in range(0, batch_size[0]):
             thisrow = {}
             truerow = {}
-            thisrow["Image Index"] = dataset.df.index[BATCH_SIZE * i + j]
-            truerow["Image Index"] = dataset.df.index[BATCH_SIZE * i + j]
+            thisrow["patientId"] = dataset.df.index[BATCH_SIZE * i + j]
+            truerow["patientId"] = dataset.df.index[BATCH_SIZE * i + j]
 
             # iterate over each entry in prediction vector; each corresponds to
             # individual label

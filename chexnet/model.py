@@ -110,7 +110,7 @@ def train_model(
             i = 0
             total_done = 0
             # iterate over all data in train/val dataloader:
-            for data in dataloaders[phase]:                
+            for data in dataloaders[phase]:
                 i += 1
                 inputs, labels, _ = data
                 batch_size = inputs.shape[0]
@@ -126,8 +126,6 @@ def train_model(
                     optimizer.step()
 
                 running_loss += loss.data[0] * batch_size
-                if (i % 5) == 0:
-                    print ("Batch {}/{:.0f} Loss {:.4f}".format(i, dataset_sizes[phase] / batch_size, loss.data[0]))
 
             epoch_loss = running_loss / dataset_sizes[phase]
 
@@ -202,7 +200,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 256
+    BATCH_SIZE = 16
 
     try:
         rmtree('results/')
@@ -218,9 +216,11 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     #N_LABELS = 2 # In this case, we want to train for 2 class (has or not pneumonia)
 
     # load labels
+    print("- Loading Data")
     df = pd.read_csv("rsna_labels.csv", index_col=0)
 
     # define torchvision transforms
+    print("- Transforming Images")
     data_transforms = {
         'train': transforms.Compose([
             transforms.RandomHorizontalFlip(),
@@ -255,12 +255,12 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         transformed_datasets['train'],
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=0)
+        num_workers=8)
     dataloaders['val'] = torch.utils.data.DataLoader(
         transformed_datasets['val'],
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=0)
+        num_workers=8)
 
     # please do not attempt to train without GPU as will take excessively long
     if not use_gpu:
@@ -308,3 +308,313 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         data_transforms, model, PATH_TO_IMAGES)
 
     return preds, aucs
+
+def fine_tunning_FC(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
+    """
+    Train torchvision model to NIH data given high level hyperparameters.
+
+    Args:
+        PATH_TO_IMAGES: path to NIH images
+        LR: learning rate
+        WEIGHT_DECAY: weight decay parameter for SGD
+
+    Returns:
+        preds: torchvision model predictions on test fold with ground truth for comparison
+        aucs: AUCs for each train,test tuple
+
+    """
+    
+    #==========================================
+    # Initialization
+    #==========================================
+    NUM_EPOCHS = 100
+    BATCH_SIZE = 16
+
+    try:
+        rmtree('results/')
+    except BaseException:
+        pass  # directory doesn't yet exist, no need to clear it
+    os.makedirs("results/")
+
+    # use imagenet mean,std for normalization
+    mean = [0.485, 0.456, 0.406]
+    std = [0.229, 0.224, 0.225]
+
+    # 0 - Does not have pneumonia, and 1 - positive for pneumonia
+    N_LABELS = 2
+
+    #==========================================
+    # Load labels
+    #==========================================
+    print("- Loading Data")
+    df = pd.read_csv("rsna_labels.csv", index_col=0)
+
+    #==========================================
+    # Define torchvision transforms
+    #==========================================
+    print("- Transforming Images")
+    data_transforms = {
+        'train': transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.Scale(224),
+            # because scale doesn't always give 224 x 224, this ensures 224 x
+            # 224
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std)
+        ]),
+        'val': transforms.Compose([
+            transforms.Scale(224),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std)
+        ]),
+    }
+
+    #==========================================
+    # Create train/val dataloaders
+    #==========================================
+    transformed_datasets = {}
+    transformed_datasets['train'] = CXR.RSNA_Dataset(
+        path_to_images=PATH_TO_IMAGES,
+        mode='train',
+        transform=data_transforms['train'])
+    transformed_datasets['val'] = CXR.RSNA_Dataset(
+        path_to_images=PATH_TO_IMAGES,
+        mode='val',
+        transform=data_transforms['val'])
+
+    dataloaders = {}
+    dataloaders['train'] = torch.utils.data.DataLoader(
+        transformed_datasets['train'],
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=8)
+    dataloaders['val'] = torch.utils.data.DataLoader(
+        transformed_datasets['val'],
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=8)
+
+    # please do not attempt to train without GPU as will take excessively long
+    if not use_gpu:
+        raise ValueError("Error, requires GPU")
+    model = models.densenet121(pretrained=False)
+    
+    #==========================================
+    # Loading cheXnet weights
+    #==========================================
+    PATH_TO_MODEL = "pretrained/checkpoint"
+    checkpoint = torch.load(PATH_TO_MODEL, map_location=lambda storage, loc: storage)
+    model = checkpoint['model']
+    del checkpoint
+    model.cpu()
+    
+    #==========================================
+    # Freezing all layers so they wont be updated
+    #==========================================
+    for param in model.parameters():
+        param.requires_grad = False
+        
+    #==========================================    
+    # Fine-Tunning on the last layer    
+    #==========================================
+    
+    # calculating the input of the new layer
+    num_ftrs = model.classifier[0].in_features
+    
+    # switching the classifier for one with only 2 classes
+    model.classifier = nn.Sequential(nn.Linear(num_ftrs, N_LABELS), nn.Softmax())
+
+    #==========================================
+    # Put model on GPU
+    #==========================================
+    model = model.cuda()
+
+    #==========================================
+    # Define criterion, optimizer for training
+    #==========================================
+    criterion = nn.BCELoss()
+    optimizer = optim.SGD(
+        filter(
+            lambda p: p.requires_grad,
+            model.parameters()),
+        lr=LR,
+        momentum=0.9,
+        weight_decay=WEIGHT_DECAY)
+    dataset_sizes = {x: len(transformed_datasets[x]) for x in ['train', 'val']}
+
+    #==========================================
+    # Train model
+    #==========================================
+    model, best_epoch = train_model(model, criterion, optimizer, LR, num_epochs=NUM_EPOCHS,
+                                    dataloaders=dataloaders, dataset_sizes=dataset_sizes, weight_decay=WEIGHT_DECAY)
+
+    #==========================================
+    # Get preds and AUCs on test fold
+    #==========================================
+    preds, aucs = E.make_pred_multilabel(
+        data_transforms, model, PATH_TO_IMAGES)
+
+    return preds, aucs, model
+
+def fine_tunning_conv(PATH_TO_IMAGES, LR, WEIGHT_DECAY, freezing_layer_threshold):
+    """
+    Train torchvision model to NIH data given high level hyperparameters.
+
+    Args:
+        PATH_TO_IMAGES: path to NIH images
+        LR: learning rate
+        WEIGHT_DECAY: weight decay parameter for SGD
+
+    Returns:
+        preds: torchvision model predictions on test fold with ground truth for comparison
+        aucs: AUCs for each train,test tuple
+
+    """
+    
+    #==========================================
+    # Initialization
+    #==========================================
+    NUM_EPOCHS = 100
+    BATCH_SIZE = 16
+
+    try:
+        rmtree('results/')
+    except BaseException:
+        pass  # directory doesn't yet exist, no need to clear it
+    os.makedirs("results/")
+
+    # use imagenet mean,std for normalization
+    mean = [0.485, 0.456, 0.406]
+    std = [0.229, 0.224, 0.225]
+
+    # 0 - Does not have pneumonia, and 1 - positive for pneumonia
+    N_LABELS = 2
+
+    #==========================================
+    # Load labels
+    #==========================================
+    print("- Loading Data")
+    df = pd.read_csv("rsna_labels.csv", index_col=0)
+
+    #==========================================
+    # Define torchvision transforms
+    #==========================================
+    print("- Transforming Images")
+    data_transforms = {
+        'train': transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.Scale(224),
+            # because scale doesn't always give 224 x 224, this ensures 224 x
+            # 224
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std)
+        ]),
+        'val': transforms.Compose([
+            transforms.Scale(224),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std)
+        ]),
+    }
+
+    #==========================================
+    # Create train/val dataloaders
+    #==========================================
+    transformed_datasets = {}
+    transformed_datasets['train'] = CXR.RSNA_Dataset(
+        path_to_images=PATH_TO_IMAGES,
+        mode='train',
+        transform=data_transforms['train'])
+    transformed_datasets['val'] = CXR.RSNA_Dataset(
+        path_to_images=PATH_TO_IMAGES,
+        mode='val',
+        transform=data_transforms['val'])
+
+    dataloaders = {}
+    dataloaders['train'] = torch.utils.data.DataLoader(
+        transformed_datasets['train'],
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=8)
+    dataloaders['val'] = torch.utils.data.DataLoader(
+        transformed_datasets['val'],
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=8)
+
+    # please do not attempt to train without GPU as will take excessively long
+    if not use_gpu:
+        raise ValueError("Error, requires GPU")
+    model = models.densenet121(pretrained=False)
+    
+    #==========================================
+    # Loading cheXnet weights
+    #==========================================
+    PATH_TO_MODEL = "pretrained/checkpoint"
+    checkpoint = torch.load(PATH_TO_MODEL, map_location=lambda storage, loc: storage)
+    model = checkpoint['model']
+    del checkpoint
+    model.cpu()
+    
+    #==========================================
+    # Freezing all layers so they wont be updated
+    #==========================================    
+    
+    # the layers higher than this threshold will remain trainable
+    print("Freezing layers until layer",str(freezing_layer_threshold))
+    # number of children
+    child_counter = 0
+    for child in model.children():        
+        # number of children of the children
+        children_of_child_counter = 0
+        for children_of_child in child.children():
+            # checking if this layer should be frozen
+            if (children_of_child_counter < freezing_layer_threshold):
+                for param in children_of_child.parameters():
+                    param.requires_grad = False
+            children_of_child_counter += 1
+        child_counter += 1
+        
+    #==========================================    
+    # Fine-Tunning on the last layer    
+    #==========================================    
+    # calculating the input of the new layer
+    num_ftrs = model.classifier[0].in_features
+    
+    # switching the classifier for one with only 2 classes
+    model.classifier = nn.Sequential(nn.Linear(num_ftrs, N_LABELS), nn.Softmax())
+
+    #==========================================
+    # Put model on GPU
+    #==========================================
+    model = model.cuda()
+
+    #==========================================
+    # Define criterion, optimizer for training
+    #==========================================
+    criterion = nn.BCELoss()
+    optimizer = optim.SGD(
+        filter(
+            lambda p: p.requires_grad,
+            model.parameters()),
+        lr=LR,
+        momentum=0.9,
+        weight_decay=WEIGHT_DECAY)
+    dataset_sizes = {x: len(transformed_datasets[x]) for x in ['train', 'val']}
+
+    #==========================================
+    # Train model
+    #==========================================
+    model, best_epoch = train_model(model, criterion, optimizer, LR, num_epochs=NUM_EPOCHS,
+                                    dataloaders=dataloaders, dataset_sizes=dataset_sizes, weight_decay=WEIGHT_DECAY)
+
+    #==========================================
+    # Get preds and AUCs on test fold
+    #==========================================
+    preds, aucs = E.make_pred_multilabel(
+        data_transforms, model, PATH_TO_IMAGES)
+
+    return preds, aucs, model

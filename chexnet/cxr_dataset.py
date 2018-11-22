@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset
+from sklearn.model_selection import train_test_split
 import os
 from PIL import Image
 
@@ -96,30 +97,22 @@ class RSNA_Dataset(Dataset):
         self.path_to_images = path_to_images
         self.df = pd.read_csv("rsna_labels.csv")
         self.df['patientId'] = self.df['patientId']+".png"
-        self.df.drop_duplicates('patientId')
+        self.df = self.df.drop_duplicates('patientId')
+        
+        np.random.seed(42)
+        msk = np.random.rand(len(self.df)) < 0.8
         
         if (mode == 'train'):
-            self.df = self.df.sample(int(0.8*len(self.df)),random_state=42)
+            self.df = self.df[msk]
         elif (mode == 'val'):
-            self.df = self.df.sample(int(0.2*len(self.df)),random_state=42)
+            self.df = self.df[~msk]
 
         self.df = self.df.set_index("patientId")
         
         self.PRED_LABEL = [
-            'Atelectasis',
-            'Cardiomegaly',
-            'Effusion',
-            'Infiltration',
-            'Mass',
-            'Nodule',
             'Pneumonia',
-            'Pneumothorax',
-            'Consolidation',
-            'Edema',
-            'Emphysema',
-            'Fibrosis',
-            'Pleural_Thickening',
-            'Hernia']
+            'not Pneumonia'
+            ]
 
         RESULT_PATH = "results/"
 
@@ -136,7 +129,7 @@ class RSNA_Dataset(Dataset):
 
         label = np.zeros(len(self.PRED_LABEL), dtype=int)
         if (self.df['Target'].iloc[idx].astype('int') > 0):
-            label[6] = 1 #pneumonia
+            label[0] = 1 #pneumonia
             
         if self.transform:
             image = self.transform(image)
