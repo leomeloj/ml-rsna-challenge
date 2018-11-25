@@ -26,8 +26,8 @@ with open('settings.json') as json_data_file:
 model1_path = json_data["MODEL_50"]
 model1 = models.load_model(model1_path, backbone_name='resnet50', convert=True, nms=False)
 
-model2_path = json_data["MODEL_101"]
-model2 = models.load_model(model2_path, backbone_name='resnet101', convert=True, nms=False)
+#model2_path = json_data["MODEL_101"]
+#model2 = models.load_model(model2_path, backbone_name='resnet101', convert=True, nms=False)
 
 test_jpg_dir = json_data["TEST_JPG_DIR"]
 submission_dir = json_data["SUBMISSION_DIR"]
@@ -63,24 +63,27 @@ for i, fname in enumerate(os.listdir(test_jpg_dir)):
     fid = fname[:-4]
 
     boxes_pred1, scores1 = util.get_detection_from_file(fpath, model1, sz)
-    boxes_pred2, scores2 = util.get_detection_from_file(fpath, model2, sz)
+    #boxes_pred2, scores2 = util.get_detection_from_file(fpath, model2, sz)
 
     indices1 = np.where(scores1 > score_threshold1)[0]
     scores1 = scores1[indices1]
     boxes_pred1 = boxes_pred1[indices1]
     boxes_pred1, scores1 = util.nms(boxes_pred1, scores1, nms_threshold)
 
-    indices2 = np.where(scores2 > score_threshold2)[0]
-    scores2 = scores2[indices2]
-    boxes_pred2 = boxes_pred2[indices2]
-    boxes_pred2, scores2 = util.nms(boxes_pred2, scores2, nms_threshold)
+    #indices2 = np.where(scores2 > score_threshold2)[0]
+    #scores2 = scores2[indices2]
+    #boxes_pred2 = boxes_pred2[indices2]
+    #boxes_pred2, scores2 = util.nms(boxes_pred2, scores2, nms_threshold)
 
-    boxes_pred = np.concatenate((boxes_pred1, boxes_pred2))
-    scores = np.concatenate((scores1, scores2))
+    #boxes_pred = np.concatenate((boxes_pred1, boxes_pred2))
+    #scores = np.concatenate((scores1, scores2))
 
-    boxes_pred, scores = util.averages(
-        boxes_pred, scores, wt_overlap, solo_min)
-    util.shrink(boxes_pred, shrink_factor)
+    boxes_pred = boxes_pred1
+    scores = scores1
+
+    #boxes_pred, scores = util.averages(
+    #    boxes_pred, scores, wt_overlap, solo_min)
+    #util.shrink(boxes_pred, shrink_factor)
 
     output = ''
     for j, bb in enumerate(boxes_pred):
