@@ -29,7 +29,9 @@ def read_image_bgr(path):
     Args
         path: Path to the image.
     """
-    image = np.asarray(Image.open(path).convert('RGB'))
+    image = np.asarray(Image.open(path).convert('RGB'))    
+
+#    print(path, image.shape)
     return image[:, :, ::-1].copy()
 
 
@@ -160,9 +162,12 @@ def resize_image(img, min_side=800, max_side=1333):
     Returns
         A resized image.
     """
-    (rows, cols, _) = img.shape
+    #print (img.shape)
+    (rows, cols, _) = (1024, 1024, 3)
 
+    #TODO: To used images already reseized
     smallest_side = min(rows, cols)
+    #smallest_size = 1024
 
     # rescale the image so the smallest side is min_side
     scale = min_side / smallest_side
@@ -174,6 +179,6 @@ def resize_image(img, min_side=800, max_side=1333):
         scale = max_side / largest_side
 
     # resize the image with the computed scale
-    img = cv2.resize(img, None, fx=scale, fy=scale)
+    #img = cv2.resize(img, None, fx=scale, fy=scale)
 
     return img, scale

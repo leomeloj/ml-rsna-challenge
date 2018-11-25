@@ -136,22 +136,24 @@ class Generator(object):
         # test all annotations
         for index, (image, annotations) in enumerate(zip(image_group, annotations_group)):
             assert(isinstance(annotations, np.ndarray)), '\'load_annotations\' should return a list of numpy arrays, received: {}'.format(type(annotations))
-
+            #TODO: keeping anotations since its a fixed size now
+            img_shape = (1024,1024, 3)
             # test x2 < x1 | y2 < y1 | x1 < 0 | y1 < 0 | x2 <= 0 | y2 <= 0 | x2 >= image.shape[1] | y2 >= image.shape[0]
             invalid_indices = np.where(
                 (annotations[:, 2] <= annotations[:, 0]) |
                 (annotations[:, 3] <= annotations[:, 1]) |
                 (annotations[:, 0] < 0) |
                 (annotations[:, 1] < 0) |
-                (annotations[:, 2] > image.shape[1]) |
-                (annotations[:, 3] > image.shape[0])
+                (annotations[:, 2] > img_shape[1]) |
+                (annotations[:, 3] > img_shape[0])
             )[0]
 
+            
             # delete invalid indices
             if len(invalid_indices):
                 warnings.warn('Image with id {} (shape {}) contains the following invalid boxes: {}.'.format(
                     group[index],
-                    image.shape,
+                    img_shape,
                     [annotations[invalid_index, :] for invalid_index in invalid_indices]
                 ))
                 annotations_group[index] = np.delete(annotations, invalid_indices, axis=0)
