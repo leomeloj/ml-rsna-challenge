@@ -26,11 +26,12 @@ with open('settings.json') as json_data_file:
 model1_path = json_data["MODEL_50"]
 model1 = models.load_model(model1_path, backbone_name='resnet50', convert=True, nms=False)
 
-#model2_path = json_data["MODEL_101"]
-#model2 = models.load_model(model2_path, backbone_name='resnet101', convert=True, nms=False)
+model2_path = json_data["MODEL_101"]
+model2 = models.load_model(model2_path, backbone_name='resnet101', convert=True, nms=False)
 
 test_jpg_dir = json_data["TEST_JPG_DIR"]
 submission_dir = json_data["SUBMISSION_DIR"]
+classified_as_pneumonia = pd.read_csv(json_data["CLASSIFICATION_RESULTS"])
 
 sz = 224
 
@@ -56,45 +57,53 @@ test_ids = []
 test_outputs = []
 
 start = time.time()
-
+import os
+miss = 0 
 for i, fname in enumerate(os.listdir(test_jpg_dir)):
-    print(f"Predicting boxes for image # {i+1}\r", end="")
-    fpath = os.path.join(test_jpg_dir, fname)
-    fid = fname[:-4]
+    if(classified_as_pneumonia['patient_id'].str.contains(os.path.basename(fname)).any()):
+        print(f"Predicting boxes for image # {i+1}\r", end="")
+        fpath = os.path.join(test_jpg_dir, fname)
+        fid = fname[:-4]
 
-    boxes_pred1, scores1 = util.get_detection_from_file(fpath, model1, sz)
-    #boxes_pred2, scores2 = util.get_detection_from_file(fpath, model2, sz)
+        boxes_pred1, scores1 = util.get_detection_from_file(fpath, model1, sz)
+        boxes_pred2, scores2 = util.get_detection_from_file(fpath, model2, sz)
 
-    indices1 = np.where(scores1 > score_threshold1)[0]
-    scores1 = scores1[indices1]
-    boxes_pred1 = boxes_pred1[indices1]
-    boxes_pred1, scores1 = util.nms(boxes_pred1, scores1, nms_threshold)
+        indices1 = np.where(scores1 > score_threshold1)[0]
+        scores1 = scores1[indices1]
+        boxes_pred1 = boxes_pred1[indices1]
+        boxes_pred1, scores1 = util.nms(boxes_pred1, scores1, nms_threshold)
 
-    #indices2 = np.where(scores2 > score_threshold2)[0]
-    #scores2 = scores2[indices2]
-    #boxes_pred2 = boxes_pred2[indices2]
-    #boxes_pred2, scores2 = util.nms(boxes_pred2, scores2, nms_threshold)
+        indices2 = np.where(scores2 > score_threshold2)[0]
+        scores2 = scores2[indices2]
+        boxes_pred2 = boxes_pred2[indices2]
+        boxes_pred2, scores2 = util.nms(boxes_pred2, scores2, nms_threshold)
 
-    #boxes_pred = np.concatenate((boxes_pred1, boxes_pred2))
-    #scores = np.concatenate((scores1, scores2))
+        boxes_pred = np.concatenate((boxes_pred1, boxes_pred2))
+        scores = np.concatenate((scores1, scores2))
 
-    boxes_pred = boxes_pred1
-    scores = scores1
+        #boxes_pred = boxes_pred2
+        #scores = scores2
 
-    #boxes_pred, scores = util.averages(
-    #    boxes_pred, scores, wt_overlap, solo_min)
-    #util.shrink(boxes_pred, shrink_factor)
+        boxes_pred, scores = util.averages(
+    	boxes_pred, scores, wt_overlap, solo_min)
+        util.shrink(boxes_pred, shrink_factor)
 
-    output = ''
-    for j, bb in enumerate(boxes_pred):
-        x1 = int(bb[0])
-        y1 = int(bb[1])
-        w = int(bb[2]-x1+1)
-        h = int(bb[3]-y1+1)
-        output += f'{scores[j]:.3f} {x1} {y1} {w} {h} '
-    test_ids.append(fid)
-    test_outputs.append(output)
-print()
+        output = ''
+        for j, bb in enumerate(boxes_pred):
+            x1 = int(bb[0])
+            y1 = int(bb[1])
+            w = int(bb[2]-x1+1)
+            h = int(bb[3]-y1+1)
+            output += f'{scores[j]:.3f} {x1} {y1} {w} {h} '
+        test_ids.append(fid)
+        test_outputs.append(output)
+    else: 
+        fid = fname[:-4]
+        test_ids.append(fid)
+        test_outputs.append('')
+        miss += 1
+
+print(f'Number of misses {miss}/{len(os.listdir(test_jpg_dir))}')
 end = time.time()
 # print execution time
 print(f"Elapsed time = {end-start:.3f} seconds")
